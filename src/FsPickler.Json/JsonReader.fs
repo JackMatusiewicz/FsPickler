@@ -35,8 +35,26 @@ type internal JsonPickleReader (jsonReader : JsonReader, omitHeader, useCustomSe
     let arrayStack = new Stack<int> ()
     do arrayStack.Push Int32.MinValue
 
+    let cache = System.Collections.Generic.Dictionary<(string * int), (obj * Type)> ()
+
     // do not write tag if omitting header or array element
     let omitTag () = (omitHeader && depth = 0) || arrayStack.Peek() = depth - 1
+
+    member this.Get<'a> (ignoreName : bool) (name : string) =
+        let key = (name, depth)
+
+        let rec calc () =
+            let result = jsonReader.ReadPrimitiveAs<'a> ignoreName name
+            match result with
+            | SuccessParse v -> v
+            | FailParse (name, v, t) ->
+                cache.Add ((name, depth), (v,t))
+                calc ()
+
+        match cache.TryGetValue key with
+        | true, (v,_) -> v :?> 'a
+        | false, _ -> calc ()
+
 
     interface IPickleFormatReader with
             
@@ -48,7 +66,7 @@ type internal JsonPickleReader (jsonReader : JsonReader, omitHeader, useCustomSe
             if jsonReader.TokenType <> JsonToken.StartObject then raise <| new FormatException("invalid json root object.")
             else
                 do jsonReader.MoveNext()
-                let version = jsonReader.ReadPrimitiveAs<string> false "FsPickler"
+                let version = __.Get<string> false "FsPickler"
                 if version <> formatv4000 then
                     let v = Version(version)
                     if version = formatv0960 || version = formatv1200 || version = formatv1400 || version = formatv2000 then
@@ -56,7 +74,7 @@ type internal JsonPickleReader (jsonReader : JsonReader, omitHeader, useCustomSe
                     else
                         raise <| new FormatException(sprintf "Unrecognized JSON format version %O." v)
 
-                let sTag = jsonReader.ReadPrimitiveAs<string> false "type"
+                let sTag = __.Get<string> false "type"
                 if tag <> sTag then
                     raise <| new InvalidPickleTypeException(tag, sTag)
 
@@ -136,19 +154,19 @@ type internal JsonPickleReader (jsonReader : JsonReader, omitHeader, useCustomSe
             else
                 jsonReader.TokenType <> JsonToken.EndArray
 
-        member __.ReadCachedObjectId () = jsonReader.ReadPrimitiveAs<int64> false "id"
+        member __.ReadCachedObjectId () = __.Get<int64> false "id"
 
-        member __.ReadBoolean tag = jsonReader.ReadPrimitiveAs<bool> (omitTag ()) tag
-        member __.ReadByte tag = jsonReader.ReadPrimitiveAs<int64> (omitTag ()) tag |> byte
-        member __.ReadSByte tag = jsonReader.ReadPrimitiveAs<int64> (omitTag ()) tag |> sbyte
+        member __.ReadBoolean tag = __.Get<bool> (omitTag ()) tag
+        member __.ReadByte tag = __.Get<int64> (omitTag ()) tag |> byte
+        member __.ReadSByte tag = __.Get<int64> (omitTag ()) tag |> sbyte
 
-        member __.ReadInt16 tag = jsonReader.ReadPrimitiveAs<int64> (omitTag ()) tag |> int16
-        member __.ReadInt32 tag = jsonReader.ReadPrimitiveAs<int64> (omitTag ()) tag |> int
-        member __.ReadInt64 tag = jsonReader.ReadPrimitiveAs<int64> (omitTag ()) tag
+        member __.ReadInt16 tag = __.Get<int64> (omitTag ()) tag |> int16
+        member __.ReadInt32 tag = __.Get<int64> (omitTag ()) tag |> int
+        member __.ReadInt64 tag = __.Get<int64> (omitTag ()) tag
 
-        member __.ReadUInt16 tag = jsonReader.ReadPrimitiveAs<int64> (omitTag ()) tag |> uint16
-        member __.ReadUInt32 tag = jsonReader.ReadPrimitiveAs<int64> (omitTag ()) tag |> uint32
-        member __.ReadUInt64 tag = jsonReader.ReadPrimitiveAs<int64> (omitTag ()) tag |> uint64
+        member __.ReadUInt16 tag = __.Get<int64> (omitTag ()) tag |> uint16
+        member __.ReadUInt32 tag = __.Get<int64> (omitTag ()) tag |> uint32
+        member __.ReadUInt64 tag = __.Get<int64> (omitTag ()) tag |> uint64
 
         member __.ReadSingle tag =
             if not <| omitTag () then
@@ -178,20 +196,20 @@ type internal JsonPickleReader (jsonReader : JsonReader, omitHeader, useCustomSe
             jsonReader.Read() |> ignore
             value
 
-        member __.ReadChar tag = let value = jsonReader.ReadPrimitiveAs<string> (omitTag ()) tag in value.[0]
-        member __.ReadString tag = jsonReader.ReadPrimitiveAs<string> (omitTag ()) tag
+        member __.ReadChar tag = let value = __.Get<string> (omitTag ()) tag in value.[0]
+        member __.ReadString tag = __.Get<string> (omitTag ()) tag
 
-        member __.ReadBigInteger tag = jsonReader.ReadPrimitiveAs<string> (omitTag ()) tag |> BigInteger.Parse
+        member __.ReadBigInteger tag = __.Get<string> (omitTag ()) tag |> BigInteger.Parse
 
         member __.ReadGuid tag = 
             if isBsonReader then 
-                jsonReader.ReadPrimitiveAs<Guid> (omitTag ()) tag
+                __.Get<Guid> (omitTag ()) tag
             else
-                let textGuid = jsonReader.ReadPrimitiveAs<string> (omitTag ()) tag 
+                let textGuid = __.Get<string> (omitTag ()) tag 
                 new Guid(textGuid)
 
-        member __.ReadTimeSpan tag = jsonReader.ReadPrimitiveAs<string> (omitTag ()) tag |> TimeSpan.Parse
-        member __.ReadDecimal tag = jsonReader.ReadPrimitiveAs<string> (omitTag ()) tag |> decimal
+        member __.ReadTimeSpan tag = __.Get<string> (omitTag ()) tag |> TimeSpan.Parse
+        member __.ReadDecimal tag = __.Get<string> (omitTag ()) tag |> decimal
 
         // BSON spec mandates the use of Unix time; 
         // this has millisecond precision which results in loss of accuracy w.r.t. ticks
@@ -205,10 +223,10 @@ type internal JsonPickleReader (jsonReader : JsonReader, omitHeader, useCustomSe
                     jsonReader.MoveNext()
 
                 jsonReader.MoveNext()
-                let kind = jsonReader.ReadPrimitiveAs<int64> false "kind" |> int |> enum<DateTimeKind>
-                let ticks = jsonReader.ReadPrimitiveAs<int64> false "ticks"
+                let kind = __.Get<int64> false "kind" |> int |> enum<DateTimeKind>
+                let ticks = __.Get<int64> false "ticks"
                 if kind = DateTimeKind.Local then
-                    let offset = jsonReader.ReadPrimitiveAs<int64> false "offset"
+                    let offset = __.Get<int64> false "offset"
                     jsonReader.MoveNext()
                     let dto = new DateTimeOffset(ticks, new TimeSpan(offset))
                     dto.LocalDateTime
@@ -216,7 +234,7 @@ type internal JsonPickleReader (jsonReader : JsonReader, omitHeader, useCustomSe
                     jsonReader.MoveNext()
                     new DateTime(ticks, kind)
             else
-                let dt = jsonReader.ReadPrimitiveAs<string> (omitTag ()) tag
+                let dt = __.Get<string> (omitTag ()) tag
                 DateTime.Parse(dt, null, DateTimeStyles.RoundtripKind)
 
         member __.ReadDateTimeOffset tag =
@@ -226,13 +244,13 @@ type internal JsonPickleReader (jsonReader : JsonReader, omitHeader, useCustomSe
                     jsonReader.MoveNext()
 
                 jsonReader.MoveNext()
-                let ticks = jsonReader.ReadPrimitiveAs<int64> false "ticks"
-                let offset = jsonReader.ReadPrimitiveAs<int64> false "offset"
+                let ticks = __.Get<int64> false "ticks"
+                let offset = __.Get<int64> false "offset"
                 jsonReader.MoveNext()
 
                 new DateTimeOffset(ticks, new TimeSpan(offset))
             else
-                let dt = jsonReader.ReadPrimitiveAs<string> (omitTag ()) tag
+                let dt = __.Get<string> (omitTag ()) tag
                 DateTimeOffset.Parse(dt, null, DateTimeStyles.RoundtripKind)
 
         member __.ReadBytes tag =

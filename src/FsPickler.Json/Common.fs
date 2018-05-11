@@ -9,6 +9,10 @@ open MBrace.FsPickler
 
 #nowarn "1204"
 
+type ParseResult<'failure, 'success> =
+    | FailParse of 'failure
+    | SuccessParse of 'success
+
 [<AutoOpen>]
 module internal Common =
 
@@ -80,8 +84,8 @@ module internal Common =
             if jsonReader.TokenType = JsonToken.PropertyName then
                 let jsonName = jsonReader.Value |> fastUnbox<string>
                 if name <> jsonName then
-                    let msg = sprintf "expected property '%s' but was '%s'." name jsonName
-                    raise <| new FormatException(msg)
+                    FailParse jsonName
+                else SuccessParse name
             else
                 let msg = sprintf "expected token '%O' but was '%O'." JsonToken.PropertyName jsonReader.TokenType
                 raise <| new FormatException(msg)
@@ -90,12 +94,21 @@ module internal Common =
 
         member jsonReader.ReadPrimitiveAs<'T> ignoreName (name : string) =
             if not ignoreName then
-                jsonReader.ReadProperty name
+                let result = jsonReader.ReadProperty name
                 jsonReader.Read() |> ignore
-                
-            let v = jsonReader.ValueAs<'T> ()
-            jsonReader.Read() |> ignore
-            v
+                match result with
+                | SuccessParse s ->
+                    let v = jsonReader.ValueAs<'T> ()
+                    jsonReader.Read() |> ignore
+                    SuccessParse v
+                | FailParse p ->
+                    let v = jsonReader.Value ()
+                    let t = jsonReader.ValueType ()
+                    FailParse (p,v,t)
+            else
+                let v = jsonReader.ValueAs<'T> ()
+                jsonReader.Read() |> ignore
+                SuccessParse v
             
         member inline jsonReader.MoveNext () = 
             if jsonReader.Read() then ()
