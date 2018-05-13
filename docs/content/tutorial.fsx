@@ -16,7 +16,7 @@ let textReader = Unchecked.defaultof<System.IO.TextReader>
 
 (**
 
-# An Introduction to FsPickler
+# An Introduction to FsPickler 
 
 The following provides an overview of the basic functionalities offered by the library.
 
