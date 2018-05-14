@@ -87,8 +87,7 @@ module internal Common =
                     FailParse jsonName
                 else SuccessParse name
             else
-                let msg = sprintf "expected token '%O' but was '%O'." JsonToken.PropertyName jsonReader.TokenType
-                raise <| new FormatException(msg)
+                FailParse name
 
         member inline jsonReader.ValueAs<'T> () = jsonReader.Value |> fastUnbox<'T>
 
