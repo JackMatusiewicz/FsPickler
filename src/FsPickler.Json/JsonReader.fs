@@ -48,12 +48,25 @@ type internal JsonPickleReader (jsonReader : JsonReader, omitHeader, useCustomSe
             match result with
             | SuccessParse v -> v
             | FailParse (name, v, t) ->
-                cache.Add ((name, depth), (v,t))
+                if not <| cache.ContainsKey (name, depth) then
+                    cache.Add ((name, depth), (v,t))
                 calc ()
 
         match cache.TryGetValue key with
         | true, (v,_) -> v :?> 'a
         | false, _ -> calc ()
+
+    member __.Cache (ignoreName : bool) (name : string) =
+        let calc () =
+            let result = jsonReader.ReadPrimitiveAs<'a> ignoreName name
+            match result with
+            | SuccessParse v ->
+                if not <| cache.ContainsKey (name, depth) then
+                    cache.Add ((name, depth), (v, v.GetType ()))
+            | FailParse (name, v, t) ->
+                if not <| cache.ContainsKey (name, depth) then
+                    cache.Add ((name, depth), (v,t))
+        calc ()
 
 
     interface IPickleFormatReader with
@@ -82,38 +95,50 @@ type internal JsonPickleReader (jsonReader : JsonReader, omitHeader, useCustomSe
             if not omitHeader then jsonReader.Read() |> ignore
 
         member __.BeginReadObject (tag : string) =
-                
-            if not <| omitTag () then
-                let result = jsonReader.ReadProperty tag |> ignore //TODO remoe
-                jsonReader.MoveNext ()
+            let rec calc () =
+                let mutable parse = SuccessParse ""
+                if not <| omitTag () then
+                    parse <- jsonReader.ReadProperty tag
+                    jsonReader.MoveNext ()
 
-            if isTopLevelSequence && depth = 0 then
-                arrayStack.Push depth
-                depth <- depth + 1
-                ObjectFlags.IsSequenceHeader
+                match parse with
+                | FailParse p ->
+                    match jsonReader.TokenType with
+                    | JsonToken.Null
+                    | JsonToken.StartArray
+                    | JsonToken.StartObject ->
+                        failwith "TODO - this needs a new reader!"
+                    | _ ->
+                        __.Cache (omitTag ()) tag
+                        calc ()
+                | SuccessParse _ ->
+                    if isTopLevelSequence && depth = 0 then
+                        arrayStack.Push depth
+                        depth <- depth + 1
+                        ObjectFlags.IsSequenceHeader
 
-            else
-                match jsonReader.TokenType with
-                | JsonToken.Null -> ObjectFlags.IsNull
-                | JsonToken.StartArray ->
-                    jsonReader.MoveNext()
-                    arrayStack.Push depth
-                    depth <- depth + 1
-                    ObjectFlags.IsSequenceHeader
-
-                | JsonToken.StartObject ->
-                    do jsonReader.MoveNext()
-                    depth <- depth + 1
-
-                    if jsonReader.ValueAs<string> () = "_flags" then
-                        jsonReader.MoveNext()
-                        let csvFlags = jsonReader.ValueAs<string>()
-                        jsonReader.MoveNext()
-                        parseFlagCsv csvFlags
                     else
-                        ObjectFlags.None
+                        match jsonReader.TokenType with
+                        | JsonToken.Null -> ObjectFlags.IsNull
+                        | JsonToken.StartArray ->
+                            jsonReader.MoveNext()
+                            arrayStack.Push depth
+                            depth <- depth + 1
+                            ObjectFlags.IsSequenceHeader
 
-                | token -> raise <| new FormatException(sprintf "expected start of Json object but was '%O'." token)
+                        | JsonToken.StartObject ->
+                            do jsonReader.MoveNext()
+                            depth <- depth + 1
+
+                            if jsonReader.ValueAs<string> () = "_flags" then
+                                jsonReader.MoveNext()
+                                let csvFlags = jsonReader.ValueAs<string>()
+                                jsonReader.MoveNext()
+                                parseFlagCsv csvFlags
+                            else
+                                ObjectFlags.None
+                        | token -> raise <| new FormatException(sprintf "expected start of Json object but was '%O'." token)
+            calc ()
 
 
         member __.EndReadObject () =
