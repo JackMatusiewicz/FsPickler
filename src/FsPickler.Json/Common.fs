@@ -102,8 +102,8 @@ module internal Common =
                     jsonReader.Read() |> ignore
                     SuccessParse v
                 | FailParse p ->
-                    let v = jsonReader.Value ()
-                    let t = jsonReader.ValueType ()
+                    let v = jsonReader.Value
+                    let t = jsonReader.ValueType
                     FailParse (p,v,t)
             else
                 let v = jsonReader.ValueAs<'T> ()

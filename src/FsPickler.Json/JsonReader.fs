@@ -84,7 +84,7 @@ type internal JsonPickleReader (jsonReader : JsonReader, omitHeader, useCustomSe
         member __.BeginReadObject (tag : string) =
                 
             if not <| omitTag () then
-                jsonReader.ReadProperty tag
+                let result = jsonReader.ReadProperty tag |> ignore //TODO remoe
                 jsonReader.MoveNext ()
 
             if isTopLevelSequence && depth = 0 then
@@ -170,7 +170,7 @@ type internal JsonPickleReader (jsonReader : JsonReader, omitHeader, useCustomSe
 
         member __.ReadSingle tag =
             if not <| omitTag () then
-                jsonReader.ReadProperty tag
+                jsonReader.ReadProperty tag |> ignore //TODO remoe
                 jsonReader.MoveNext()
 
             let value =
@@ -184,7 +184,7 @@ type internal JsonPickleReader (jsonReader : JsonReader, omitHeader, useCustomSe
                 
         member __.ReadDouble tag =
             if not <| omitTag () then
-                jsonReader.ReadProperty tag
+                jsonReader.ReadProperty tag |> ignore //TODO remoe
                 jsonReader.MoveNext()
 
             let value =
@@ -219,7 +219,7 @@ type internal JsonPickleReader (jsonReader : JsonReader, omitHeader, useCustomSe
         member __.ReadDateTime tag = 
             if isBsonReader then
                 if not <| omitTag() then
-                    jsonReader.ReadProperty tag
+                    jsonReader.ReadProperty tag |> ignore //TODO remoe
                     jsonReader.MoveNext()
 
                 jsonReader.MoveNext()
@@ -240,7 +240,7 @@ type internal JsonPickleReader (jsonReader : JsonReader, omitHeader, useCustomSe
         member __.ReadDateTimeOffset tag =
             if isBsonReader then
                 if not <| omitTag() then
-                    jsonReader.ReadProperty tag
+                    jsonReader.ReadProperty tag |> ignore //TODO remoe
                     jsonReader.MoveNext()
 
                 jsonReader.MoveNext()
@@ -255,7 +255,7 @@ type internal JsonPickleReader (jsonReader : JsonReader, omitHeader, useCustomSe
 
         member __.ReadBytes tag =
             if not <| omitTag () then
-                jsonReader.ReadProperty tag
+                jsonReader.ReadProperty tag |> ignore //TODO remoe
                 jsonReader.Read() |> ignore
 
             let bytes =
